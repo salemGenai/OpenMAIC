@@ -1,0 +1,72 @@
+name: Claude Code (Discussions)
+
+# EXPERIMENTAL — needs a live test.
+#
+# anthropics/claude-code-action does NOT support GitHub Discussions
+# (discussion / discussion_comment are not in its event list), which is why
+# "@claude" in a Discussion goes unanswered. This workflow bridges that gap
+# WITHOUT the action: it runs the Claude Code CLI headlessly to draft an answer,
+# then posts that answer back into the Discussion via the GitHub GraphQL API.
+#
+# Like other discussion events, these always run from the DEFAULT branch (main),
+# so this covers Discussions in every category with no per-branch copy.
+on:
+  discussion:
+    types: [created]
+  discussion_comment:
+    types: [created]
+
+jobs:
+  answer:
+    # Same control model as the issue/PR workflow: only act when "@claude" appears.
+    if: |
+      (github.event_name == 'discussion' && (contains(github.event.discussion.body, '@claude') || contains(github.event.discussion.title, '@claude'))) ||
+      (github.event_name == 'discussion_comment' && contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      discussions: write   # required so the GraphQL addDiscussionComment can post the reply
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Draft the answer
+        env:
+          # Headless auth for CI: the same OAuth token the issue/PR workflow uses.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Passed via env (NOT inlined into the script) so untrusted Discussion
+          # text cannot be interpreted as shell. "$VAR" expansion does not re-run
+          # command substitution found inside the value, so this is injection-safe.
+          TITLE: ${{ github.event.discussion.title }}
+          QUESTION: ${{ github.event.comment.body || github.event.discussion.body }}
+        run: |
+          set -euo pipefail
+          PROMPT="A user asked the following in a GitHub Discussion titled \"$TITLE\" on this repository. Answer helpfully and concisely in GitHub-flavored markdown. You may read the repository (read-only) to ground your answer. Output ONLY the answer, with no preamble.
+
+          ---
+          $QUESTION
+          ---"
+          claude -p "$PROMPT" \
+            --allowedTools "Read,Grep,Glob,Bash(cat:*),Bash(ls:*),Bash(find:*),Bash(rg:*)" \
+            > reply.md
+          echo "Drafted $(wc -c < reply.md) bytes."
+
+      - name: Post the answer back to the Discussion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCUSSION_ID: ${{ github.event.discussion.node_id }}
+        run: |
+          set -euo pipefail
+          gh api graphql \
+            -f discussionId="$DISCUSSION_ID" \
+            -F body=@reply.md \
+            -f query='mutation($discussionId: ID!, $body: String!) {
+              addDiscussionComment(input: { discussionId: $discussionId, body: $body }) {
+                comment { url }
+              }
+            }'

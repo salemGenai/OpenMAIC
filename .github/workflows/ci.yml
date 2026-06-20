@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main, feat/maic-editor-v0]
+    branches: [main, feat/maic-editor-v0, develop]
 
 concurrency:
   group: ci-${{ github.ref }}
