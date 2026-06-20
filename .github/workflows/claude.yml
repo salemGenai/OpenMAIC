@@ -1,22 +1,36 @@
 name: Claude Code
 
+# How triggering works:
+# Claude runs ONLY when a human writes "@claude" in an issue, pull request,
+# comment, or review (see the `if:` gate below). This keeps usage controlled.
+#
+# "All branches" is automatic: the events below (issues, issue_comment,
+# pull_request_review, pull_request_review_comment) are NOT tied to a feature
+# branch, so GitHub always evaluates THIS workflow from the DEFAULT branch
+# (main). Once this file is on main, mentioning @claude works on issues and on
+# PRs from every branch with no per-branch copy needed. (The `pull_request`
+# opened/reopened event is the one exception — it uses the workflow from the PR's
+# head branch — so keep this file in sync when you branch off main.)
 on:
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
   issues:
     types: [opened, assigned]
+  issue_comment:            # also fires for comments on a PR's conversation tab
+    types: [created]
+  pull_request:
+    types: [opened, reopened]
   pull_request_review:
     types: [submitted]
+  pull_request_review_comment:
+    types: [created]
 
 jobs:
   claude:
     if: |
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))) ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request' && (contains(github.event.pull_request.body, '@claude') || contains(github.event.pull_request.title, '@claude'))) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
