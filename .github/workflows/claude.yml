@@ -49,3 +49,17 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Playwright browser automation:
+          # - --mcp-config registers the Playwright MCP server.
+          # - One allow rule, `mcp__playwright`, grants ALL of its tools at once
+          #   (the bare server name matches every tool on that server), so there
+          #   is no need to list browser_navigate, browser_click, ... one by one.
+          # The browser binary installs on demand the first time Claude actually
+          # uses it (via the server's own browser_install tool), so plain code
+          # tasks pay no overhead. If a browser ever fails to launch on the runner
+          # for missing system libs, add a step: `npx playwright install --with-deps chromium`.
+          # These tools are ADDED to the action's defaults (it keeps its built-in
+          # Edit/Read/Bash and GitHub commenting tools).
+          claude_args: |
+            --mcp-config '{"mcpServers":{"playwright":{"command":"npx","args":["-y","@playwright/mcp@latest"]}}}'
+            --allowedTools "mcp__playwright"
